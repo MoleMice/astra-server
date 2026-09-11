@@ -3,10 +3,18 @@ const players = new Map();
 function createPlayer(playerId) {
     if (!players.has(playerId)) {
         players.set(playerId, {
+            name: "Astronaut",
+
+            lastNameChange: 0,
+
             stardust: 0,
+
             discovered: ["moon"],
+
             equipped: "moon",
+
             totalDiscoveries: 1,
+
             rarest: "common"
         });
     }
@@ -23,3 +31,7 @@ module.exports = {
     createPlayer,
     getPlayer
 };
+
+function getPlayer(playerId) {
+    return players.get(playerId);
+}
