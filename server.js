@@ -10,7 +10,7 @@ const crypto = require("crypto");
 
 const app = express();
 
-const Filter = require("bad-words");
+const Filter = require("bad-words").default;
 
 const profanityFilter = new Filter();
 
@@ -781,4 +781,3 @@ const PORT = process.env.PORT || 3000;
 app.listen(PORT, "0.0.0.0", () => {
     console.log(`ASTRA server running on port ${PORT}`);
 });
-
