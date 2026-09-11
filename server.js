@@ -586,7 +586,7 @@ app.post("/api/collect", (req, res) => {
     const previous =
         lastCollect.get(playerId) || 0;
 
-    const COOLDOWN = 50;
+    const COOLDOWN = 15;
 
     if (now - previous < COOLDOWN) {
 
