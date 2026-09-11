@@ -10,6 +10,10 @@ const crypto = require("crypto");
 
 const app = express();
 
+const Filter = require("bad-words");
+
+const profanityFilter = new Filter();
+
 const sessions = new Map();
 
 function createSession() {
@@ -264,6 +268,67 @@ function getScanCost(player) {
     return Math.max(100, getCashPerClick(player) * 100);
 }
 
+function normalizeName(name) {
+    return name
+        .toLowerCase()
+        .normalize("NFKD")
+        .replace(/[\u0300-\u036f]/g, "")
+        .replace(/[0-9]/g, character => {
+            const replacements = {
+                "0": "o",
+                "1": "i",
+                "2": "z",
+                "3": "e",
+                "4": "a",
+                "5": "s",
+                "6": "g",
+                "7": "t",
+                "8": "b",
+                "9": "g"
+            };
+
+            return replacements[character] || character;
+        })
+        .replace(/[@]/g, "a")
+        .replace(/[!|]/g, "i")
+        .replace(/[$]/g, "s")
+        .replace(/[^a-z]/g, "");
+}
+
+function isNameAllowed(name) {
+    if (typeof name !== "string") {
+        return false;
+    }
+
+    const trimmed = name.trim();
+
+    if (trimmed.length < 3 || trimmed.length > 16) {
+        return false;
+    }
+
+    if (!/^[a-zA-Z0-9 _-]+$/.test(trimmed)) {
+        return false;
+    }
+
+    const normalized = normalizeName(trimmed);
+
+    if (!normalized) {
+        return false;
+    }
+
+    // Check the original name.
+    if (profanityFilter.isProfane(trimmed)) {
+        return false;
+    }
+
+    // Check the normalized version to catch simple bypasses.
+    if (profanityFilter.isProfane(normalized)) {
+        return false;
+    }
+
+    return true;
+}
+
 const BANNERS = {
     "deep-space": [
         { id: "moon", chance: 42 },
@@ -358,6 +423,52 @@ function updatePlayerRarity(player) {
         );
 
 }
+
+const NAME_CHANGE_COOLDOWN = 10 * 60 * 1000;
+
+app.post("/api/name", (req, res) => {
+    const auth = getAuthenticatedPlayer(req);
+
+    if (!auth) {
+        return res.status(401).json({
+            error: "Unauthorized"
+        });
+    }
+
+    const { name } = req.body;
+
+    if (!isNameAllowed(name)) {
+        return res.status(400).json({
+            error: "That name is not allowed"
+        });
+    }
+
+    const player = auth.player;
+
+    const now = Date.now();
+
+    const timeSinceChange =
+        now - (player.lastNameChange || 0);
+
+    if (timeSinceChange < NAME_CHANGE_COOLDOWN) {
+        const remaining =
+            NAME_CHANGE_COOLDOWN - timeSinceChange;
+
+        return res.status(429).json({
+            error: "You can change your name again later",
+            remaining
+        });
+    }
+
+    player.name = name.trim();
+    player.lastNameChange = now;
+
+    res.json({
+        success: true,
+        name: player.name,
+        lastNameChange: player.lastNameChange
+    });
+});
 
 app.post("/api/gacha", (req, res) => {
 
@@ -630,49 +741,39 @@ app.post("/api/collect", (req, res) => {
 });
 
 app.get("/api/leaderboard", (req, res) => {
-
-    const auth =
-        getAuthenticatedPlayer(req);
+    const auth = getAuthenticatedPlayer(req);
 
     if (!auth) {
-
         return res.status(401).json({
             error: "Unauthorized"
         });
-
     }
 
-    const leaderboard =
-        [];
+    const leaderboard = [];
 
-    for (
-        const [playerId, player]
-        of players
-    ) {
-
+    for (const [playerId, player] of players) {
         leaderboard.push({
-            name:
-                playerId === auth.playerId
-                    ? "YOU"
-                    : "PLAYER",
+            id: playerId,
 
-            stardust:
-                player.stardust,
+            name: player.name || "Astronaut",
 
-            rarity:
-                player.rarest,
+            stardust: player.stardust,
 
-            discoveries:
-                player.discovered.length
+            rarity: player.rarest,
+
+            discoveries: player.discovered.length,
+
+            isYou: playerId === auth.playerId
         });
-
     }
+
+    leaderboard.sort(
+        (a, b) => b.stardust - a.stardust
+    );
 
     res.json({
-        players:
-            leaderboard
+        players: leaderboard
     });
-
 });
 
 const PORT = process.env.PORT || 3000;
